@@ -29,11 +29,14 @@ from ..constants.worker import all_measurements
 from ..constants.worker import the_zmq_context
 from ..measurement import Measurements
 from ..utilities.measurement import load_measurements_from_buffer
+from ..utilities.zmq import PollTimeoutException
 from ..pipeline import CancelledException
 from ..preferences import get_awt_headless
 from ..preferences import set_preferences_from_dict
 from ..utilities.zmq.communicable.reply.upstream_exit import UpstreamExit
 from ..workspace import Workspace
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Worker:
@@ -124,6 +127,7 @@ class Worker:
                         )
                         t0 = time.time()
                     self.work_socket = the_zmq_context.socket(zmq.REQ)
+                    self.work_socket.set_hwm(2000)
                     self.work_socket.connect(self.work_request_address)
                     # fetch a job
                     the_request = Work(self.current_analysis_id)
@@ -304,18 +308,21 @@ class Worker:
                     return
 
                 if worker_runs_post_group:
-                    last_workspace.interaction_handler = self.interaction_handler
-                    last_workspace.cancel_handler = self.cancel_handler
-                    last_workspace.post_group_display_handler = (
-                        self.post_group_display_handler
-                    )
-                    # There might be an exception in this call, but it will be
-                    # handled elsewhere, and there's nothing we can do for it
-                    # here.
-                    current_pipeline.post_group(
-                        last_workspace, current_measurements.get_grouping_keys()
-                    )
-                    del last_workspace
+                    if not last_workspace is None:
+                        last_workspace.interaction_handler = self.interaction_handler
+                        last_workspace.cancel_handler = self.cancel_handler
+                        last_workspace.post_group_display_handler = (
+                            self.post_group_display_handler
+                        )
+                        # There might be an exception in this call, but it will be
+                        # handled elsewhere, and there's nothing we can do for it
+                        # here.
+                        current_pipeline.post_group(
+                            last_workspace, current_measurements.get_grouping_keys()
+                        )
+                        del last_workspace
+                    else:
+                        LOGGER.error("No workspace from last image set, cannot run post group")
 
             # send measurements back to server
             req = MeasurementsReport(
@@ -323,7 +330,18 @@ class Worker:
                 buf=current_measurements.file_contents(),
                 image_set_numbers=image_set_numbers,
             )
-            rep = self.send(req)
+
+            while True:
+                try:
+                    rep = self.send(req, timeout=4000)
+                    break
+                except PollTimeoutException:
+                    LOGGER.info(f"Worker sending MeasurementsReport halted, retrying for job {str(job.image_set_numbers)}")
+                    self.work_socket.close(linger=0)
+                    self.work_socket = the_zmq_context.socket(zmq.REQ)
+                    self.work_socket.set_hwm(2000)
+                    self.work_socket.connect(self.work_request_address)
+                    continue
 
         except CancelledException:
             # Main thread received shutdown signal
@@ -389,7 +407,7 @@ class Worker:
         rep = self.send(req)
         use_omero_credentials(rep.credentials)
 
-    def send(self, req, work_socket=None):
+    def send(self, req, work_socket=None, timeout=None):
         """Send a request and receive a reply
 
         req - request to send
@@ -410,7 +428,10 @@ class Worker:
         req.send_only(work_socket)
         response = None
         while response is None:
-            for socket, state in poller.poll():
+            poll_res = poller.poll(timeout)
+            if len(poll_res) == 0:
+                raise PollTimeoutException
+            for socket, state in poll_res:
                 if socket == self.notify_socket and state == zmq.POLLIN:
                     notify_msg = self.notify_socket.recv()
                     if notify_msg == NOTIFY_STOP:

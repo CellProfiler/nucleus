@@ -17,6 +17,7 @@ from cellprofiler_core.utilities.zmq.communicable.request import (
     LockStatusRequest,
     Request,
 )
+from ._event import PollTimeoutException
 
 NOTIFY_SOCKET_ADDR = "inproc://BoundaryNotifications"
 SD_KEY_DICT = "__keydict__"
