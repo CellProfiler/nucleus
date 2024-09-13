@@ -8,16 +8,14 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
     ],
     extras_require={
         "dev": [
-            "black==19.10b0",
-            "click>=7.1.2",
-            "pre-commit==2.2.0",
             "sphinx==3.1.2",
             "twine==3.1.1",
         ],
-        "test": ["pytest==5.4.1"],
+        "test": ["pytest~=7.4.1"],
         "wx": ["wxPython==4.1.0"],
     },
     install_requires=[
@@ -29,8 +27,8 @@ setuptools.setup(
         "numpy>=1.18.2",
         "prokaryote==2.4.4",
         "psutil>=5.7.0",
-        "python-bioformats==4.0.7",
-        "python-javabridge==4.0.3",
+        "python-bioformats>=4.0.7,<5",
+        "python-javabridge>=4.0.3,<5",
         "pyzmq~=22.3",
         "scikit-image==0.18.3",
         "scipy>=1.4.1",
@@ -41,6 +39,6 @@ setuptools.setup(
     packages=setuptools.find_packages(exclude=["tests"]),
     python_requires=">=3.8",
     url="https://github.com/CellProfiler/core",
-    version="4.2.7",
+    version="4.2.8",
     zip_safe=False,
 )
